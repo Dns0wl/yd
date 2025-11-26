@@ -1,0 +1,152 @@
+"use client";
+
+import { useRef, useState } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { ManualPaperForm } from "./ManualPaperForm";
+import { ManualPaperList } from "./ManualPaperList";
+import { ManualPaperTemplate } from "./ManualPaperTemplate";
+import { ManualPaperRecord, PurchaseChannel } from "./types";
+import { useManualPaperStore } from "./useManualPaperStore";
+import { format } from "date-fns";
+
+interface ManualPaperPageProps {
+  initialRecords?: ManualPaperRecord[];
+}
+
+export function ManualPaperPage({ initialRecords }: ManualPaperPageProps) {
+  const { records, addRecord } = useManualPaperStore(initialRecords);
+  const [showForm, setShowForm] = useState(false);
+  const [previewRecord, setPreviewRecord] = useState<ManualPaperRecord | null>(null);
+  const [downloadTarget, setDownloadTarget] = useState<ManualPaperRecord | null>(null);
+  const hiddenRef = useRef<HTMLDivElement>(null);
+
+  const handleCreateRecord = (values: { customerName: string; purchaseDate: string; purchaseChannel: PurchaseChannel }) => {
+    const record: ManualPaperRecord = {
+      id: crypto.randomUUID(),
+      customerName: values.customerName,
+      purchaseDate: values.purchaseDate,
+      purchaseChannel: values.purchaseChannel,
+      createdAt: new Date().toISOString(),
+    };
+
+    addRecord(record);
+    setShowForm(false);
+    setPreviewRecord(record);
+  };
+
+  const formatFileName = (record: ManualPaperRecord) => {
+    const datePart = format(new Date(record.purchaseDate), "yyyyMMdd");
+    const safeName = record.customerName.replace(/[^a-z0-9]+/gi, "_").replace(/_{2,}/g, "_").replace(/^_|_$/g, "");
+    return `ManualPaper-${safeName || "Customer"}-${datePart}.pdf`;
+  };
+
+  const handleDownload = async (record: ManualPaperRecord) => {
+    setDownloadTarget(record);
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const element = hiddenRef.current;
+    if (!element) return;
+
+    const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#f6f6f6" });
+    const imgData = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a5" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const ratio = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+    const imgWidth = canvas.width * ratio;
+    const imgHeight = canvas.height * ratio;
+    const x = (pageWidth - imgWidth) / 2;
+    const y = (pageHeight - imgHeight) / 2;
+
+    pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight);
+    pdf.save(formatFileName(record));
+    setDownloadTarget(null);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <div className="rounded-3xl border border-neutral-800/70 bg-gradient-to-br from-neutral-900/80 via-neutral-900/40 to-neutral-800/50 p-6 shadow-[0_20px_80px_-45px_rgba(0,0,0,0.75)] backdrop-blur">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.35em] text-neutral-400">Hayu Widyas Office Dashboard</p>
+              <h2 className="text-3xl font-semibold text-white">Manual Paper Generator</h2>
+              <p className="text-sm text-neutral-400">Generate A5 Manual Paper PDF for Hayu Widyas customers</p>
+            </div>
+            <Button variant="primary" onClick={() => setShowForm(true)}>
+              Add New Manual Paper
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm text-neutral-300 sm:grid-cols-3">
+            <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Active records</p>
+              <p className="text-xl font-semibold text-white">{records.length}</p>
+            </div>
+            <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Latest customer</p>
+              <p className="text-base font-semibold text-white">{records[0]?.customerName ?? "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Next action</p>
+              <p className="text-base font-semibold text-white">Preview or export instantly</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-neutral-800/70 bg-gradient-to-br from-emerald-400/10 via-emerald-300/5 to-amber-200/10 p-6 text-neutral-50 shadow-[0_20px_80px_-45px_rgba(0,0,0,0.65)]">
+          <p className="text-xs uppercase tracking-[0.3em] text-emerald-100">User friendly</p>
+          <h3 className="mt-2 text-2xl font-semibold text-white">Modern, responsive dashboard</h3>
+          <p className="mt-2 text-sm text-emerald-50/80">
+            Optimized for quick creation, preview, and PDF export on any device. Mobile navigation and cards keep the experience smooth for field teams.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-emerald-50/90">
+            <li>• Responsive layout with mobile-friendly navigation</li>
+            <li>• One-click preview and export for every record</li>
+            <li>• Branded A5 template ready for PDF output</li>
+          </ul>
+        </div>
+      </div>
+
+      <ManualPaperList
+        records={records}
+        onPreview={(record) => setPreviewRecord(record)}
+        onDownload={handleDownload}
+      />
+
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add New Manual Paper">
+        <ManualPaperForm onSubmit={handleCreateRecord} onCancel={() => setShowForm(false)} />
+      </Modal>
+
+      <Modal open={Boolean(previewRecord)} onClose={() => setPreviewRecord(null)} title="Manual Paper Preview" widthClassName="max-w-3xl">
+        {previewRecord ? (
+          <div className="flex justify-center">
+            <ManualPaperTemplate
+              customerName={previewRecord.customerName}
+              purchaseDate={previewRecord.purchaseDate}
+              purchaseChannel={previewRecord.purchaseChannel}
+            />
+          </div>
+        ) : null}
+      </Modal>
+
+      <div className="pointer-events-none fixed -left-[9999px] top-0" aria-hidden>
+        {downloadTarget ? (
+          <div ref={hiddenRef}>
+            <ManualPaperTemplate
+              customerName={downloadTarget.customerName}
+              purchaseDate={downloadTarget.purchaseDate}
+              purchaseChannel={downloadTarget.purchaseChannel}
+            />
+          </div>
+        ) : (
+          <div ref={hiddenRef} />
+        )}
+      </div>
+    </div>
+  );
+}
